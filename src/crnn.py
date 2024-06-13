@@ -5,20 +5,40 @@ import argparse
 
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Reshape, Dense, LSTM, Lambda, Bidirectional, Dropout
-from tensorflow.keras.layers import BatchNormalization, Activation
 from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import KFold
-from load_data import CHAR_DICT, MAX_LEN, ctc_lambda_func, SIZE, TextImageGenerator, VizCallback
+from load_data import CHAR_DICT, MAX_LEN, ctc_lambda_func, SIZE, TextImageGenerator, ProgressCallback
+
+def maxpooling(base_model):
+    model = Sequential(name='vgg16')
+    for layer in base_model.layers[:-1]:
+        if 'pool' in layer.name:
+            pooling_layer = MaxPooling2D(pool_size=(2, 2), name=layer.name)
+            model.add(pooling_layer)
+        else:
+            model.add(layer)
+    return model
 
 def build_model(input_shape, training, finetune):
     inputs = Input(name='the_input', shape=input_shape, dtype='float32')
     
     #Convolution layer
-    base_model = tf.keras.applications.VGG16(weights = None, include_top = False) #Not include 3 fully-conected layer
+    # base_model = tf.keras.applications.VGG16(weights = None, include_top = False) #Not include 3 fully-conected layer
+    # base_model = maxpooling(base_model)
+    # inner = base_model(inputs)
+    inner = Conv2D(32, (3, 3), padding='same', activation='relu')(inputs)
+    inner = MaxPooling2D(pool_size=(2, 2))(inner)
+    inner = Conv2D(64, (3, 3), padding='same', activation='relu')(inner)
+    inner = MaxPooling2D(pool_size=(2, 2))(inner)
+    inner = Conv2D(128, (3, 3), padding='same', activation='relu')(inner)
+    inner = MaxPooling2D(pool_size=(2, 2))(inner)
 
-    inner = base_model(inputs)
+    base_model = Model(inputs=inputs, outputs=inner)
+
     #thay đổi kích thước tensor cho phù hợp các lớp sau
     inner = Reshape(target_shape=(int(inner.shape[1]), -1), name='reshape')(inner)
+    
+    #Recurent layer
     #fully-connected 512 đơn vị, hàm kích hoạt ReLu
     inner = Dense(512, activation='relu', kernel_initializer='he_normal', name='dense1')(inner) 
     #lớp ngẫu nhiên drop tỉ lệ 0.25, giảm over-fitting
@@ -68,10 +88,14 @@ def train_kfold(idx, kfold, datapath, labelpath,  epochs, batch_size, lr, finetu
     #Lưu lại mô hình có giá trị loss trên tập kiểm tra val_loss tốt nhất
     ckp = tf.keras.callbacks.ModelCheckpoint(weight_path, monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=True)
     #Callback hiển thị lại quá trình huấn luyện và đánh giá (edit_distance)
-    vis = VizCallback(y_func, valid_generator, len(valid_idx))
+    pr = ProgressCallback(y_func, valid_generator, len(valid_idx))
+    #Callback Tensorboard
+    tb = tf.keras.callbacks.TensorBoard(log_dir='logs', histogram_freq=1, write_graph=True, write_images=True)
     #Callback dừng quá trình huấn luyện nếu giá trị loss không cải thiện sau 1 số lượng epochs (10)
     earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=0, mode='min')
-
+    #Reduce learning rate khi giá trị loss không cải thiện sau 5 epochs
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_delta=1e-8, verbose=1)
+    
     #nạp mô hình huấn luyện trước(nếu có)
     if finetune:
         print('load pretrain model')
@@ -81,7 +105,7 @@ def train_kfold(idx, kfold, datapath, labelpath,  epochs, batch_size, lr, finetu
     model.fit(train_generator.next_batch(),
                 steps_per_epoch=int(len(train_idx) / batch_size), #Số bước mỗi epochs (số mẫu huấn luyện/ kích thước batch)
                 epochs=epochs,
-                callbacks=[ckp, vis, earlystop], #gọi các callback
+                callbacks=[ckp, pr, earlystop, tb, reduce_lr], #gọi các callback
                 validation_data=valid_generator.next_batch(), #dữ liệu kiểm tra 
                 validation_steps=int(len(valid_idx) / batch_size))
  
@@ -100,8 +124,8 @@ def train(datapath, labelpath, epochs, batch_size, lr, finetune=False):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train", default='data/preprocess/DataSamples1/', type=str)
-    parser.add_argument("--label", default='data/preprocess/labels.json', type=str)
+    parser.add_argument("--train", default='data/preprocess/samples2/', type=str)
+    parser.add_argument("--label", default='data/preprocess/samples2.json', type=str)
 
     parser.add_argument("--epochs", default=100, type=int)
     parser.add_argument('--batch_size', default=3, type=int)

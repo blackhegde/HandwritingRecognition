@@ -32,6 +32,9 @@ def img_to_blackwhite(img):
     foreground = (labels == 1).astype(np.uint8) * 255
     #binarize the image
     binary_image = binarize(foreground)
+
+    print(f"Preprocessed image size: {binary_image.shape}")
+
     return binary_image
 
 
@@ -61,15 +64,7 @@ def preprocess_image(input_dir, output_dir):
         
         cv2.imwrite(output_path, binary_image, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
         
-    # # Sao chép labels.json vào thư mục output_dir
-    # labels_file = os.path.join(input_dir, 'labels.json')
-    # if os.path.exists(labels_file):
-    #     output_labels_file = os.path.join(output_dir, 'labels.json')
-    #     shutil.copy(labels_file, output_labels_file)
-    # else:
-    #     print(f"{labels_file} không tồn tại.")
-
 # Test on input_dir is 'data/raw/DataSamples1' and output_dir is 'data/preprocess/DataSamples1'
-input_dir = 'data/raw/PrivateTest'
-output_dir = 'data/preprocess/test'
+input_dir = 'data/raw/DataSamples2'
+output_dir = 'data/preprocess/samples2'
 preprocess_image(input_dir, output_dir)

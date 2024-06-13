@@ -18,7 +18,6 @@ CHAR_DICT = len(letters) + 1
 
 chars = letters
 wordChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÂÊÔàáâãèéêìíòóôõùúýăĐđĩũƠơưạảấầẩậắằẵặẻẽếềểễệỉịọỏốồổỗộớờởỡợụủỨứừửữựỳỵỷỹ"
-corpus = ' \n '.join(json.load(open('data/preprocess/labels.json')).values())
 
 def text_to_labels(text):
     return list(map(lambda x: letters.index(x), text))
@@ -34,34 +33,35 @@ def ctc_lambda_func(args):
     return tf.keras.backend.ctc_batch_cost(labels, y_pred, input_length, label_length)
 
 #Decode đầu ra
-def decode_batch(out):
-    result = []
-    # print(out.shape)
-    # print(out)
-    for j in range(out.shape[0]):
-        out_best = list(np.argmax(out[j, 2:], 1))
-        # out_best = [k for k, g in itertools.groupby(out_best)]
-        # print(out_best)
-        outstr = labels_to_text(out_best)
-        result.append(outstr)
-    return result
-# def beamsearch(y_pred):
-#     y_pred = tf.transpose(y_pred, perm=[1, 0, 2])
-#     results = tf.nn.ctc_beam_search_decoder(y_pred, np.ones(y_pred.shape[1]) * y_pred.shape[0], beam_width=10, top_paths=1)
-#     blank=len(chars)
-#     results_text = []
-#     for res in results:
-#         s=''
-#         for label in res:
-#             if label==blank:
-#                 break
-#             label = tf.sparse.to_dense(label).numpy()[0]
-#             s+=chars[label] # map label to char
-#         results_text.append(s)
-#     return results_text
+# def decode_batch(out):
+#     result = []
+#     # print(out.shape)
+#     # print(out)
+#     for j in range(out.shape[0]):
+#         out_best = list(np.argmax(out[j, 2:], 1))
+#         # out_best = [k for k, g in itertools.groupby(out_best)]
+#         # print(out_best)
+#         outstr = labels_to_text(out_best)
+#         result.append(outstr)
+#     return result
+def beamsearch(y_pred):
+    y_pred = tf.transpose(y_pred, perm=[1, 0, 2])
+    results, _ = tf.nn.ctc_beam_search_decoder(y_pred, np.ones(y_pred.shape[1]) * y_pred.shape[0], beam_width=100, top_paths=1)
+    blank=len(chars)
+    results_text = []
+    for res in results:
+        dense_res=tf.sparse.to_dense(res, default_value=-1).numpy()
+        for seq in dense_res:
+            s = ''
+            for label in seq:
+                if label == blank or label == -1:
+                    break
+                s += chars[label] # map label to char
+            results_text.append(s)
+    return results_text
 
 #in qua trinh huan luyen, do luong khoang cach(edit distance)
-class VizCallback(tf.keras.callbacks.Callback):
+class ProgressCallback(tf.keras.callbacks.Callback):
     def __init__(self, y_func, text_img_gen, text_size, num_display_words = 6):
         self.y_func= y_func
         self.num_display_words = num_display_words 
@@ -78,7 +78,7 @@ class VizCallback(tf.keras.callbacks.Callback):
             #predict
             inputs = word_batch['the_input'][0:num_proc]
             pred = self.y_func([inputs])[0]
-            decoded_res = decode_batch(pred)
+            decoded_res = beamsearch(pred)
             # label
             labels = word_batch['the_labels'][:num_proc].astype(np.int32)
             labels = [labels_to_text(label) for label in labels]
@@ -102,8 +102,9 @@ class VizCallback(tf.keras.callbacks.Callback):
         labels = [labels_to_text(label) for label in labels]
          
         pred = self.y_func([inputs])[0]
-        pred_texts = decode_batch(pred)
-        # pred_texts = beamsearch(pred)
+        print("Raw model output (first sample):", pred[0])
+        # pred_texts = decode_batch(pred)
+        pred_texts = beamsearch(pred)
         for i in range(min(self.num_display_words, len(inputs))):
             print("label: {} - predict: {}".format(labels[i], pred_texts[i]))
 
@@ -111,7 +112,7 @@ class VizCallback(tf.keras.callbacks.Callback):
 
 class TextImageGenerator:
     def __init__(self, img_dirpath, labels_path, img_w, img_h,
-                 batch_size, downsample_factor, idxs, training=True, max_text_len=9, n_eraser=5):
+                 batch_size, downsample_factor, idxs, training=True, max_text_len=9):
         self.img_h = img_h
         self.img_w = img_w
         self.batch_size = batch_size
