@@ -33,17 +33,6 @@ def ctc_lambda_func(args):
     return tf.keras.backend.ctc_batch_cost(labels, y_pred, input_length, label_length)
 
 #Decode đầu ra
-# def decode_batch(out):
-#     result = []
-#     # print(out.shape)
-#     # print(out)
-#     for j in range(out.shape[0]):
-#         out_best = list(np.argmax(out[j, 2:], 1))
-#         # out_best = [k for k, g in itertools.groupby(out_best)]
-#         # print(out_best)
-#         outstr = labels_to_text(out_best)
-#         result.append(outstr)
-#     return result
 def beamsearch(y_pred):
     y_pred = tf.transpose(y_pred, perm=[1, 0, 2])
     results, _ = tf.nn.ctc_beam_search_decoder(y_pred, np.ones(y_pred.shape[1]) * y_pred.shape[0], beam_width=100, top_paths=1)

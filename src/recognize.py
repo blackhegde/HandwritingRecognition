@@ -3,7 +3,7 @@ import tensorflow as tf
 import json
 import numpy as np
 from crnn import build_model
-from load_data import SIZE, MAX_LEN, TextImageGenerator, decode_batch
+from load_data import SIZE, MAX_LEN, TextImageGenerator, beamsearch
 import glob                                                                 
 import argparse
 
@@ -24,14 +24,17 @@ def predict(model, datapath):
         
         print('load {}'.format(weight_path))
         model = loadmodel(weight_path)
-        X_test = test_generator.imgs.transpose((0, 2, 1, 3))
+        X_test = test_generator  #.imgs.transpose((0, 2, 1, 3))
         y_pred = model.predict(X_test, batch_size=3)
         y_preds.append(y_pred)
-        decoded_res = decode_batch(y_pred)
+        decoded_res = beamsearch(y_pred)
         for i in range(len(test_generator.img_dir)):
             print('{}: {}'.format(test_generator.img_dir[test_generator.indexes[i]], decoded_res[i]))
-    y_preds = np.prod(y_preds, axis=0)**(1.0/len(y_preds))
-    y_texts = decode_batch(y_preds)
+    if len(y_preds) == 0:
+        print("No predictions were made.")
+    else:
+        y_preds = np.prod(y_preds, axis=0)**(1.0/len(y_preds))
+    y_texts = beamsearch(y_preds)
     submit = dict(zip(test_generator.img_dir, y_texts))
     with open('submit.json', 'w', encoding='utf-8') as json_file:
         json.dump(submit, json_file, ensure_ascii=False, indent=4)
